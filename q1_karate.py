@@ -14,9 +14,7 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-
 #Part A
-
 dataset=KarateClub()
 loader = DataLoader(dataset,batch_size=20)
 for row in loader:
@@ -24,27 +22,15 @@ for row in loader:
 #Printed:
 #DataBatch(x=[34, 34], edge_index=[2, 156], y=[34], train_mask=[34], batch=[34], ptr=[2])
 
-#We have:
-# 34 nodes
-# 156 edges
-# x is a identity matrix of size 34
-# edge is a 2-by-156 matrix
-# y contains values 0-3, designating the groups
-
-#Creating the group colors for plot
-#dataset.y contains the group values
-# change depending on range of y
 color_labels=['red','blue','green','purple']
 node_colors=[]
 for i in range(dataset.x.shape[0]):
     node_colors.append(color_labels[dataset.y[i]])
 
 #Part B
-#Converting to networkx and plotting
 data_netx = to_networkx(dataset[0], node_attrs=["x"], to_undirected=True)
 plt.figure(figsize=(6, 4))
 nx.draw(data_netx, with_labels=True, node_color=node_colors, font_weight='bold')
-#plt.show()
 
 def degree(G):
     #Only for undirected graphs
@@ -53,6 +39,7 @@ def degree(G):
         degree_array[i] = len(G.edge_index[1, G.edge_index[0,:]==i])
     norm = torch.sqrt(torch.sum(degree_array**2))
     return degree_array/norm
+    
 def clustering(G):
     # works for directional and undirectionial edges
     # Number of edges between u and its neighbors divided by the maximum possible edges
@@ -81,11 +68,13 @@ def clustering(G):
     #NORMALIZE
     norm = torch.sqrt(torch.sum(clustering_array**2))
     return clustering_array/norm
+    
 def neighbors(u,edge):
     ind = edge[0,:]==u
     num_neighbors = torch.sum(ind)
     ind_neighbors = edge[1,ind]
     return num_neighbors, ind_neighbors
+    
 def pagerank(G,beta):
     # Reference http://ilpubs.stanford.edu:8090/422/1/1999-66.pdf
     #R(u)=c*sum(R(v)/Nv+c*(1-beta))
@@ -113,6 +102,7 @@ def pagerank(G,beta):
     #NORMALIZE
     norm = torch.sqrt(torch.sum(R**2))
     return R/norm
+    
 def eigenvector_centrality(G):
     # Ax=lambda x
     # A is the adjcency matrix
@@ -133,6 +123,7 @@ def eigenvector_centrality(G):
     #NORMALIZE
     norm = torch.sqrt(torch.sum(eig_cntrlty**2))
     return eig_cntrlty/norm
+    
 def hop_neighbors(G,u):
     hop_neighbors_list = [torch.tensor([u])]
     doublettes_neighbors_list = [torch.tensor([u])]
@@ -157,7 +148,8 @@ def hop_neighbors(G,u):
         if hops>max_iter:
             print("hop-neighbors: Fail, Max iteration reached!")
             break
-    return hop_neighbors_list, doublettes_neighbors_list         
+    return hop_neighbors_list, doublettes_neighbors_list  
+    
 def betweenness(G):
     # g(v)=sigma_st(v)/sigma_st
     # sigma_st: total number of shortest paths between s and t
@@ -188,6 +180,7 @@ def betweenness(G):
     #NORMALIZE
     norm = torch.sqrt(torch.sum(g**2))
     return g/norm
+    
 def closeness(G):
     # same as betweeness, but without the nominator
     g = torch.zeros(G.x.shape[0],dtype=torch.float32)
@@ -253,21 +246,12 @@ def plotPCA(X,y):
 
 plotPCA(Xstruct,dataset.y,)
 
-
-#0.43 accuracy for Xstruct
-#0.29 for X
-#0.43 for Xcomb
-#Use SGD
 #Multinomial logistic regression
-
 # Multi-class classification
 Xcomb = torch.cat((dataset.x,Xstruct),dim=1)
 X_train_1, X_test_1, y_train_1, y_test_1 = train_test_split(Xstruct, dataset.y, test_size=0.2, random_state=12)
 X_train_2, X_test_2, y_train_2, y_test_2 = train_test_split(dataset.x, dataset.y, test_size=0.2, random_state=12)
 X_train_3, X_test_3, y_train_3, y_test_3 = train_test_split(Xcomb, dataset.y, test_size=0.2, random_state=12)
-
-
-#plotPCA(X_test,multi_model.predict(X_test))
 
 #solver='liblinear' best
 slvr='liblinear'
@@ -291,20 +275,6 @@ multi_model_3.fit(X_train_3, y_train_3)
 print("Multi-class Accuracy:", accuracy_score(y_test_3, multi_model_3.predict(X_test_3)))
 print(multi_model_3.predict(X_test_3))
 plotPCA(X_test_3,multi_model_3.predict(X_test_3))
-'''
-model_2 = LogisticRegression(max_iter=100000,solver=slvr,class_weight='balanced')
-multi_model_2 = OneVsRestClassifier(model_2)
-multi_model_2.fit(dataset.x, dataset.y)
-print("Multi-class Accuracy:", accuracy_score(dataset.y, multi_model_2.predict(dataset.x)))
-print(multi_model_2.predict(dataset.x))
-plotPCA(Xstruct,multi_model_2.predict(dataset.x))
 
-Xcomb = torch.cat((dataset.x,Xstruct),dim=1)
-model_3 = LogisticRegression(max_iter=1000000,solver=slvr,class_weight='balanced')
-multi_model_3 = OneVsRestClassifier(model_3)
-multi_model_3.fit(Xcomb, dataset.y)
-print("Multi-class Accuracy:", accuracy_score(dataset.y, multi_model_3.predict(Xcomb)))
-print(multi_model_3.predict(Xcomb))
-plotPCA(Xstruct,multi_model_3.predict(Xcomb))
-'''
 plt.show()
+
