@@ -1,17 +1,16 @@
+import torch
 import torch_geometric
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch_geometric.transforms as T
 from torch_geometric.datasets import Planetoid
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import to_networkx
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.multiclass import OneVsRestClassifier
-import torch_geometric.transforms as T
-
-import torch
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
@@ -35,6 +34,7 @@ eig_cntrlty = nx.eigenvector_centrality(data_netx)
 clstr_coeff=nx.clustering(data_netx)
 xrows, xcols = dataset.x.shape
 Xstruct=torch.zeros((xrows, 6))
+
 for i in range(dataset.x.shape[0]):
     Xstruct[i,0] = dgr[i]
     Xstruct[i,1] = btwn_cntrlty[i]
@@ -44,9 +44,9 @@ for i in range(dataset.x.shape[0]):
     Xstruct[i,5] = clstr_coeff[i]
 for i in range(6):
     Xstruct[:,i] = Xstruct[:,i]/torch.sqrt(torch.sum(Xstruct[:,i]**2)) # normalizing the rows
+
 Xattr=dataset.x
 Xcomb = torch.cat((torch.tensor(Xstruct),Xattr),dim=1)
-print(Xcomb.shape) 
 
 #For Xstruct
 model = LogisticRegression(max_iter=100)
@@ -72,14 +72,3 @@ print("For comb:")
 print("Validation Multi-class Accuracy:", accuracy_score(dataset.val_mask, multi_model.predict(Xcomb)))
 print("Test Multi-class Accuracy:", accuracy_score(dataset.test_mask, multi_model.predict(Xcomb)))
 
-
-'''
-Increase the number of iterations to improve the convergence (max_iter=10).
-You might also want to scale the data as shown in:
-    https://scikit-learn.org/stable/modules/preprocessing.html
-Please also refer to the documentation for alternative solver options:
-    https://scikit-learn.org/stable/modules/linear_model.html#logistic-regression
-  n_iter_i = _check_optimize_result(
-Validation Multi-class Accuracy: 0.8153618906942393
-Test Multi-class Accuracy: 0.6307237813884786
-'''
