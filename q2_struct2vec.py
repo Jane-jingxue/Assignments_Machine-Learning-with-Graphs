@@ -11,11 +11,11 @@ import random
 
 dataset = GeometricShapes(root='data/GeometricShapes', transform=T.NormalizeFeatures())
 loader = DataLoader(dataset,batch_size=20)
-
 print(f"Number of graphs: {len(dataset)}")
 print(f"Feature shape: {dataset.num_features}")
 print(f"Number of classes: {dataset.num_classes}")
-# Pick a specific graph by index (e.g., index 0)
+
+# Pick a specific graph by index
 graph_index = 20
 data = Data(pos=dataset[graph_index].pos,face=dataset[graph_index].face,y=dataset[graph_index].y,num_nodes=dataset[graph_index].num_nodes)  # This returns a torch_geometric.data.Data object
 
@@ -31,9 +31,7 @@ dataface = Data(face=data.face)
 # Apply FaceToEdge transform
 transform = FaceToEdge(remove_faces=False)  # Keep faces if needed
 dataface = transform(dataface)
-
 data_edge=Data(x=data.pos[:,0:2],edge_index=dataface.edge_index,y=data.y,num_nodes=data.num_nodes)
-
 data_netx = to_networkx(data_edge, to_undirected=True)
 plt.figure(figsize=(6, 4))
 nx.draw(data_netx, with_labels=True, node_color='lightblue', font_weight='bold')
@@ -112,6 +110,7 @@ def struct_dist(G,k):
                     #s(Rk(u)) k-neighbor nodes
                     # dgr_seq(G,u,k) will get 0 to k hop neighbors of u 
     return fk_matrix
+    
 k=3
 f = struct_dist(data_edge,k)
 weights = torch.exp(-f)
@@ -120,13 +119,6 @@ for i in range(data_edge.num_nodes):
     weights_forWalk[i,i] = 0
     norm = torch.sqrt(torch.sum(weights_forWalk[i,:]**2))
     weights_forWalk[i,:] = weights_forWalk[i,:]/norm
-
-# when performing random walks the weights should be the probabilities
-# start at a node
-# list the neighbors
-# list their weights (probabilities) and normalize
-# perform the random walk
-# repeat
 
 Lstruct = 20 # do longer and pick the 2 most common at the end
 Zstruct = torch.zeros(data_edge.num_nodes,Lstruct,dtype=torch.int32)
@@ -145,24 +137,10 @@ def most_occuring(Z,d):
         sorted_tensor, indices = torch.sort(maxes,descending=True)
         for k in range(d):
             z_struct[i,k] = indices[k]
-    '''
-    z_struct = torch.zeros(data_edge.num_nodes,d,dtype=torch.int32)
-    for i in range(data_edge.num_nodes):
-        index_count=torch.zeros(data_edge.num_nodes,dtype=torch.int32)
-        sorted, indices = torch.sort(Z[i,:])
-        for j in range(len(sorted)):
-            if j!=i:
-                index_count[sorted[j]] += 1
-        # use sort again and take d first values
-        sorted, indices = torch.sort(index_count, descending=True)
-        z_struct[i,:] = indices[0:2]
-    return z_struct
-    '''
     return z_struct
 
 d=2
 Zstruct_d = most_occuring(Zstruct,d)
-
 struct_edge=torch.zeros(d,data_edge.num_nodes*2)
 for i in range(data_edge.num_nodes):
     struct_edge[0,2*i] = i
@@ -174,4 +152,5 @@ data_struct2vec=Data(x=Zstruct_d,edge_index=struct_edge,y=data.y)
 data_struct2vec_netx = to_networkx(data_struct2vec, to_undirected=True)
 plt.figure(figsize=(6, 4))
 nx.draw(data_struct2vec_netx, with_labels=True, node_color='gray', font_weight='bold')
+
 plt.show()
