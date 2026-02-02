@@ -10,11 +10,8 @@ from torch_geometric.data import Data
 from torch_geometric.transforms import FaceToEdge
 import random
 
-
 dataset = GeometricShapes(root='data/GeometricShapes', transform=T.NormalizeFeatures())
 loader = DataLoader(dataset,batch_size=20)
-
-
 print(f"Number of graphs: {len(dataset)}")
 print(f"Feature shape: {dataset.num_features}")
 print(f"Number of classes: {dataset.num_classes}")
@@ -29,20 +26,13 @@ print(f"Number of nodes: {data.num_nodes}")
 print(f"Number of edges: {data.num_edges}")
 print(f"Label: {data.y}")
 
-
 dataface = Data(face=data.face)
-
-# Apply FaceToEdge transform
 transform = FaceToEdge(remove_faces=False)  # Keep faces if needed
 dataface = transform(dataface)
-
 data_edge=Data(x=data.pos[:,0:2],edge_index=dataface.edge_index,y=data.y)
-print(data_edge)
-
 data_netx = to_networkx(data_edge, to_undirected=True)
 plt.figure(figsize=(6, 4))
 nx.draw(data_netx, with_labels=True, node_color='lightblue', font_weight='bold')
-
 ind=data_edge.edge_index[0,:]==0
 
 # Node to vec random walk
@@ -95,9 +85,6 @@ for i in range(X.shape[0]):
     for k in range(d):
         X_d[i,k] = indices[k]
 
-#print(X)
-#print(X_d)
-# B3.2 use X as edges
 X_edge=torch.zeros(2,data_edge.num_nodes*2)
 for i in range(data_edge.num_nodes):
     X_edge[0,2*i] = i
@@ -105,15 +92,17 @@ for i in range(data_edge.num_nodes):
     X_edge[1,2*i] = X_d[i,0]
     X_edge[1,2*i+1] = X_d[i,1]
 
-#data_node2vec_1=Data(x=data_edge.x,edge_index=X_edge,y=data.y)
+# B3.2
 data_node2vec_1=Data(x=data_edge.x,edge_index=X_edge,y=data.y)
 data_netx_node2vec_1 = to_networkx(data_node2vec_1, to_undirected=True)
 plt.figure(figsize=(6, 4))
 nx.draw(data_netx_node2vec_1, with_labels=True, node_color='lightsalmon', font_weight='bold')
+
 # B3.3
 data_node2vec_2=Data(x=X_d,edge_index=X_edge,y=data.y)
 data_netx_node2vec_2 = to_networkx(data_node2vec_2, to_undirected=True)
 plt.figure(figsize=(6, 4))
 nx.draw(data_netx_node2vec_2, with_labels=True, node_color='limegreen', font_weight='bold')
 plt.show()
+
 
