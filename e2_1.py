@@ -16,7 +16,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # --- PART A: Problem Setup and Data Preparation ---
 def get_data():
-    # Load Citeseer dataset 
+    # Load Citeseer dataset
     dataset = Planetoid(root='./data/Citeseer', name='Citeseer')
     data = dataset[0]
 
@@ -30,12 +30,12 @@ def get_data():
     train_data, val_data, test_data = transform(data)
     return train_data.to(device), val_data.to(device), test_data.to(device)
 
-# --- PART B: GNN-based Link Prediction  ---
+# --- PART B: GNN-based Link Prediction ---
 
 class GNNLinkPredictor(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels):
         super().__init__()
-        # B1. Encoder: GCN 
+        # B1. Encoder: GCN
         self.conv1 = GCNConv(in_channels, hidden_channels)
         self.conv2 = GCNConv(hidden_channels, out_channels)
 
@@ -45,7 +45,7 @@ class GNNLinkPredictor(torch.nn.Module):
         return x
 
     def decode(self, z, edge_label_index):
-        # B2. Decoder: Dot Product 
+        # B2. Decoder: Dot Product
         # Computes similarity between source and target nodes
         return (z[edge_label_index[0]] * z[edge_label_index[1]]).sum(dim=-1)
 
@@ -57,7 +57,7 @@ def train_gnn(model, optimizer, train_data):
     model.train()
     optimizer.zero_grad()
     
-    # We perform negative sampling for the training step 
+    # We perform negative sampling for the training step
     neg_edge_index = negative_sampling(
         edge_index=train_data.edge_index, num_nodes=train_data.num_nodes,
         num_neg_samples=train_data.edge_label_index.size(1), method='sparse')
@@ -72,7 +72,7 @@ def train_gnn(model, optimizer, train_data):
     ], dim=0)
 
     out = model(train_data.x, train_data.edge_index, edge_label_index)
-    loss = F.binary_cross_entropy_with_logits(out, edge_label) # Suitable loss 
+    loss = F.binary_cross_entropy_with_logits(out, edge_label) # Suitable loss
     loss.backward()
     optimizer.step()
     return loss.item()
@@ -83,7 +83,7 @@ def test_gnn(model, data):
     z = model.encode(data.x, data.edge_index)
     out = model.decode(z, data.edge_label_index).sigmoid()
     
-    # Report AUC and AP 
+    # Report AUC and AP
     auc = roc_auc_score(data.edge_label.cpu().numpy(), out.cpu().numpy())
     ap = average_precision_score(data.edge_label.cpu().numpy(), out.cpu().numpy())
     return auc, ap
@@ -160,7 +160,83 @@ class GATLinkPredictor(torch.nn.Module):
     def forward(self, x, edge_index, edge_label_index):
         z = self.encode(x, edge_index)
         return self.decode(z, edge_label_index)
+
+class GNN_MLP_Predictor(torch.nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels):
+        super().__init__()
+        # 1. Encoder (Standard GCN)
+        self.conv1 = GCNConv(in_channels, hidden_channels)
+        self.conv2 = GCNConv(hidden_channels, out_channels)
+        
+        # 2. Decoder (MLP instead of Dot Product)
+        # Input is 2 * out_channels (because we concatenate z_u and z_v)
+        self.lin1 = torch.nn.Linear(out_channels * 2, hidden_channels)
+        self.lin2 = torch.nn.Linear(hidden_channels, 1) # Output 1 score
+
+    def encode(self, x, edge_index):
+        x = self.conv1(x, edge_index).relu()
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.conv2(x, edge_index)
+        return x
+
+    def decode(self, z, edge_label_index):
+        # Get embeddings for source and target nodes
+        src, dst = edge_label_index
+        z_src = z[src]
+        z_dst = z[dst]
+        
+        # Concatenate: [Batch, 2 * out_channels]
+        z_cat = torch.cat([z_src, z_dst], dim=-1)
+        
+        # Pass through MLP
+        h = self.lin1(z_cat).relu()
+        h = F.dropout(h, p=0.5, training=self.training)
+        out = self.lin2(h)
+        
+        return out.view(-1) 
+
+    def forward(self, x, edge_index, edge_label_index):
+        z = self.encode(x, edge_index)
+        return self.decode(z, edge_label_index)
     
+class GCN_JK_Predictor(torch.nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels):
+        super().__init__()
+        # 1. Standard GCN Layers
+        self.conv1 = GCNConv(in_channels, hidden_channels)
+        self.conv2 = GCNConv(hidden_channels, out_channels)
+        
+        # 2. Projector
+        # Since we concatenate Layer 1 (hidden) and Layer 2 (out), 
+        # the dimension becomes hidden_channels + out_channels
+        self.lin_proj = torch.nn.Linear(hidden_channels + out_channels, out_channels)
+
+    def encode(self, x, edge_index):
+        # Layer 1
+        x1 = self.conv1(x, edge_index).relu()
+        x1 = F.dropout(x1, p=0.5, training=self.training)
+        
+        # Layer 2
+        x2 = self.conv2(x1, edge_index)
+        
+        # --- JUMPING KNOWLEDGE ---
+        # Concatenate the representation from Layer 1 and Layer 2
+        # (We skip input features here to save memory, but x1 contains feature info)
+        z_cat = torch.cat([x1, x2], dim=-1)
+        
+        # Project back to target dimension (optional, but helps mix the signals)
+        z = self.lin_proj(z_cat)
+        
+        return z
+
+    def decode(self, z, edge_label_index):
+        # Standard Dot Product Decoder
+        return (z[edge_label_index[0]] * z[edge_label_index[1]]).sum(dim=-1)
+
+    def forward(self, x, edge_index, edge_label_index):
+        z = self.encode(x, edge_index)
+        return self.decode(z, edge_label_index)
+           
 class GraphSAGELinkPredictor(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels):
         super().__init__()
@@ -216,16 +292,16 @@ if __name__ == "__main__":
     print("\n--- Part C: Node2Vec Training ---")
     # C1. Node2Vec settings 
     n2v_gensim = run_node2vec_gensim(train_data, embedding_dim=64, 
-                                 walk_length=20, context_size=10, 
-                                 walks_per_node=10, p=1, q=1)
+                                     walk_length=20, context_size=10, 
+                                     walks_per_node=10, p=1, q=1)
 
     # Evaluate
     test_auc, test_ap = test_node2vec_gensim(n2v_gensim, test_data)
     print(f"Node2Vec (Gensim) Test AUC: {test_auc:.4f}, Test AP: {test_ap:.4f}")
 
     # --- Part D: Improvement ---
+    print("\n--- Part D: GAT Improvement ---")
     gat_results = []
-    seeds = [42, 100, 535, 2026]
     
     for seed in seeds:
         torch.manual_seed(seed)
@@ -253,8 +329,8 @@ if __name__ == "__main__":
     avg_gat = np.mean([r[0] for r in gat_results])
     print(f"GAT Avg Test AUC: {avg_gat:.4f} (Baseline GCN: 0.9054)")
 
+    print("\n--- Part D: GraphSAGE Improvement ---")
     sage_results = []
-    seeds = [42, 100, 535, 2026]
     
     for seed in seeds:
         torch.manual_seed(seed)
@@ -280,3 +356,59 @@ if __name__ == "__main__":
 
     avg_sage = np.mean([r[0] for r in sage_results])
     print(f"GraphSAGE Avg Test AUC: {avg_sage:.4f}")
+
+    print("\n--- Part D: MLP Decoder Improvement ---")
+    mlp_results = []
+    
+    for seed in seeds:
+        torch.manual_seed(seed)
+        model = GNN_MLP_Predictor(in_channels=train_data.num_features, 
+                                  hidden_channels=128, 
+                                  out_channels=64).to(device)
+        
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+        best_val = 0
+        final_test_auc = 0
+        final_test_ap = 0
+
+        for epoch in range(1, 101):
+            loss = train_gnn(model, optimizer, train_data)
+            val_auc, val_ap = test_gnn(model, val_data)
+            if val_auc > best_val:
+                best_val = val_auc
+                final_test_auc, final_test_ap = test_gnn(model, test_data)
+        
+        mlp_results.append((final_test_auc, final_test_ap))
+        print(f"Seed {seed}: Test AUC: {final_test_auc:.4f}")
+
+    avg_mlp = np.mean([r[0] for r in mlp_results])
+    print(f"MLP Decoder Avg Test AUC: {avg_mlp:.4f}")
+
+    print("\n--- Part D: GCN + Jumping Knowledge (JK) Improvement ---")
+    jk_results = []
+    
+    for seed in seeds:
+        torch.manual_seed(seed)
+        model = GCN_JK_Predictor(in_channels=train_data.num_features, 
+                                 hidden_channels=128, 
+                                 out_channels=64).to(device)
+        
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+        best_val = 0
+        final_test_auc = 0
+        final_test_ap = 0
+
+        for epoch in range(1, 101):
+            loss = train_gnn(model, optimizer, train_data)
+            val_auc, val_ap = test_gnn(model, val_data)
+            if val_auc > best_val:
+                best_val = val_auc
+                final_test_auc, final_test_ap = test_gnn(model, test_data)
+        
+        jk_results.append((final_test_auc, final_test_ap))
+        print(f"Seed {seed}: Test AUC: {final_test_auc:.4f}")
+
+    avg_jk = np.mean([r[0] for r in jk_results])
+    print(f"JK-GCN Avg Test AUC: {avg_jk:.4f}")
